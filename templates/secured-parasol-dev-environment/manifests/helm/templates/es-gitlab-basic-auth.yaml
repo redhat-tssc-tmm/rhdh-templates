@@ -1,0 +1,25 @@
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: gitlab-basic-auth
+  namespace: ${{ values.namespace }}
+spec:
+  refreshInterval: 5m
+  secretStoreRef:
+    name: vault-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: gitlab-basic-auth
+    creationPolicy: Owner
+    template:
+      type: Opaque
+      data:
+        .git-credentials: "https://root:{{ `{{ .token }}` }}@${{ values.gitlab_host }}"
+        .gitconfig: |
+          [credential "https://${{ values.gitlab_host }}"]
+            helper = store
+  data:
+    - secretKey: token
+      remoteRef:
+        key: secrets/gitlab/token
+        property: value

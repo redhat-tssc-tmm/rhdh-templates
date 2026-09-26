@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: parasol-insurance
+  namespace: ${{ values.namespace }}
+  labels:
+    app: parasol-insurance
+    app.kubernetes.io/name: parasol-insurance-secured-${{ values.owner }}-${{ values.branch }}
+    app.kubernetes.io/part-of: parasol-insurance-secured-dev
+    app.openshift.io/runtime: quarkus
+  annotations:
+    app.openshift.io/vcs-uri: "${{ values.source_repo }}"
+    app.openshift.io/vcs-ref: "${{ values.branch }}"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: parasol-insurance
+  template:
+    metadata:
+      labels:
+        app: parasol-insurance
+        app.kubernetes.io/name: parasol-insurance-secured-${{ values.owner }}-${{ values.branch }}
+        app.kubernetes.io/part-of: parasol-insurance-secured-dev
+    spec:
+      containers:
+        - name: parasol-insurance
+          image: "${{ values.image_host }}/${{ values.image_organization }}/${{ values.image_name }}:${{ values.image_tag }}"
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          env:
+            - name: QUARKUS_LANGCHAIN4J_OPENAI_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-credentials
+                  key: base_url
+            - name: QUARKUS_LANGCHAIN4J_OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-credentials
+                  key: api_key
+            - name: POSTGRESQL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: parasol-db
+                  key: database-user
+            - name: POSTGRESQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: parasol-db
+                  key: database-password
+            - name: POSTGRESQL_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: parasol-db
+                  key: database-name
+            - name: POSTGRESQL_HOST
+              value: parasol-db
+            - name: DEV_KAFKA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: kafka-credentials
+                  key: password
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /q/health/ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /q/health/live
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20

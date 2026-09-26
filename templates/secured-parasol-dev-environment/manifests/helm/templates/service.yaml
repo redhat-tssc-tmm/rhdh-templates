@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: parasol-insurance
+  namespace: ${{ values.namespace }}
+  labels:
+    app: parasol-insurance
+    app.kubernetes.io/name: parasol-insurance-secured-${{ values.owner }}-${{ values.branch }}
+    app.kubernetes.io/part-of: parasol-insurance-secured-dev
+spec:
+  selector:
+    app: parasol-insurance
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http

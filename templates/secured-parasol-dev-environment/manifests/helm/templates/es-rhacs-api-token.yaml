@@ -1,0 +1,18 @@
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: rhacs-api-token
+  namespace: ${{ values.namespace }}
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: rhacs-api-token
+    creationPolicy: Owner
+  data:
+    - secretKey: token
+      remoteRef:
+        key: secrets/rhacs/api-token
+        property: value

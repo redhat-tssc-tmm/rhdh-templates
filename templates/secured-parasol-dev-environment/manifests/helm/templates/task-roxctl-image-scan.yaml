@@ -1,0 +1,66 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: roxctl-image-scan
+  namespace: ${{ values.namespace }}
+spec:
+  params:
+    - name: image
+      type: string
+    - name: rox_central_endpoint
+      type: string
+      default: "central-rhacs.apps.${{ values.cluster_subdomain }}:443"
+    - name: insecure-skip-tls-verify
+      type: string
+      default: "true"
+  results:
+    - name: SCAN_RESULTS
+      description: Summary of scan results
+    - name: CRITICAL_COUNT
+      description: Number of critical vulnerabilities
+    - name: HIGH_COUNT
+      description: Number of high vulnerabilities
+    - name: MEDIUM_COUNT
+      description: Number of medium vulnerabilities
+  steps:
+    - name: scan
+      image: registry.redhat.io/advanced-cluster-security/rhacs-roxctl-rhel8:latest
+      env:
+        - name: ROX_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: rhacs-api-token
+              key: token
+        - name: ROX_CENTRAL_ENDPOINT
+          value: $(params.rox_central_endpoint)
+        - name: ROX_INSECURE_CLIENT_SKIP_TLS_VERIFY
+          value: $(params.insecure-skip-tls-verify)
+      script: |
+        #!/usr/bin/env bash
+        set -uo pipefail
+        echo "Scanning image: $(params.image)"
+
+        roxctl image scan \
+          --image="$(params.image)" \
+          --output=json > /tmp/scan-results.json 2>/tmp/scan-stderr.txt || true
+
+        if [ ! -s /tmp/scan-results.json ]; then
+          echo "Scan produced no results"
+          echo -n "0" > $(results.CRITICAL_COUNT.path)
+          echo -n "0" > $(results.HIGH_COUNT.path)
+          echo -n "0" > $(results.MEDIUM_COUNT.path)
+          echo -n "Scan failed — see logs" > $(results.SCAN_RESULTS.path)
+          cat /tmp/scan-stderr.txt
+          exit 1
+        fi
+
+        CRITICAL=$(jq '[.result.vulnerabilities[]? | select(.severity == "CRITICAL_VULNERABILITY_SEVERITY")] | length' /tmp/scan-results.json 2>/dev/null || echo "0")
+        HIGH=$(jq '[.result.vulnerabilities[]? | select(.severity == "IMPORTANT_VULNERABILITY_SEVERITY")] | length' /tmp/scan-results.json 2>/dev/null || echo "0")
+        MEDIUM=$(jq '[.result.vulnerabilities[]? | select(.severity == "MODERATE_VULNERABILITY_SEVERITY")] | length' /tmp/scan-results.json 2>/dev/null || echo "0")
+
+        echo -n "${CRITICAL}" > $(results.CRITICAL_COUNT.path)
+        echo -n "${HIGH}" > $(results.HIGH_COUNT.path)
+        echo -n "${MEDIUM}" > $(results.MEDIUM_COUNT.path)
+        echo -n "Critical: ${CRITICAL}, High: ${HIGH}, Medium: ${MEDIUM}" > $(results.SCAN_RESULTS.path)
+
+        echo "Scan complete — Critical: ${CRITICAL}, High: ${HIGH}, Medium: ${MEDIUM}"

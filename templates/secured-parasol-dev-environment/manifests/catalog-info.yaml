@@ -1,0 +1,23 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: parasol-insurance-secured-dev-${{ values.owner }}-${{ values.branch }}
+  title: Parasol Insurance Secured Dev (${{ values.branch }})
+  description: Secured development sandbox for Parasol Insurance (${{ values.branch }} branch)
+  annotations:
+    argocd/app-name: parasol-insurance-secured-dev-${{ values.owner }}-${{ values.branch }}
+    backstage.io/source-location: url:https://${{ values.gitlab_host }}/${{ values.owner }}/parasol-insurance-secured/-/tree/${{ values.branch }}
+    backstage.io/kubernetes-id: parasol-insurance-secured-${{ values.owner }}-${{ values.branch }}
+    backstage.io/kubernetes-label-selector: "app.kubernetes.io/name=parasol-insurance-secured-${{ values.owner }}-${{ values.branch }}"
+    janus-idp.io/tekton: parasol-insurance-secured
+    gitlab.com/project-slug: ${{ values.owner }}/parasol-insurance-secured
+  links:
+    - url: https://devspaces.${{ values.cluster_subdomain }}/#https://${{ values.gitlab_host }}/${{ values.owner }}/parasol-insurance-secured/-/tree/${{ values.branch }}
+      title: Open in Dev Spaces
+      icon: catalog
+      type: devspaces
+spec:
+  type: service
+  lifecycle: development
+  owner: user:default/${{ values.owner }}
+  system: parasol-insurance-secured

@@ -1,0 +1,109 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: secured-parasol-dev-environment
+  title: Secured Parasol Insurance Development Environment
+  description: Creates an isolated development environment with a feature branch, CI/CD pipeline with ACS security scanning, and catalog entry for the Parasol Insurance application.
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+  tags:
+    - parasol
+    - development
+    - security
+spec:
+  owner: group:default/users
+  type: service
+
+  parameters:
+    - title: Development Branch
+      required:
+        - branch
+      properties:
+        branch:
+          title: Branch Name
+          type: string
+          description: Branch name in the parasol-insurance-secured source repo
+
+  steps:
+    - id: create-branch
+      name: Create Source Branch
+      action: gitlab:repo:push
+      input:
+        repoUrl: {{ gitlab_host }}?repo=parasol-insurance-secured&owner=${{ user.entity.metadata.name }}
+        branchName: ${{ parameters.branch }}
+        commitMessage: 'Scaffolder commit initializing branch "${{ parameters.branch }}"'
+        commitAction: create
+
+    - id: fetch-skeleton
+      name: Fetch Skeleton
+      action: fetch:template
+      input:
+        url: ./manifests/
+        values:
+          namespace: ${{ user.entity.metadata.name }}-secured-${{ parameters.branch }}
+          branch: ${{ parameters.branch }}
+          source_repo: https://{{ gitlab_host }}/${{ user.entity.metadata.name }}/parasol-insurance-secured.git
+          owner: ${{ user.entity.metadata.name }}
+          image_host: {{ quay_host }}
+          image_organization: parasol
+          image_name: parasol-insurance-secured-${{ user.entity.metadata.name }}
+          image_tag: latest
+          gitlab_host: {{ gitlab_host }}
+          cluster_subdomain: {{ cluster_subdomain }}
+          gitops_namespace: openshift-gitops
+          dev_email: ${{ user.entity.spec.profile.email }}
+
+    - id: fetch-bootstrap
+      name: Fetch Bootstrap
+      action: fetch:template
+      input:
+        url: ./bootstrap/
+        targetPath: bootstrap
+        values:
+          namespace: ${{ user.entity.metadata.name }}-secured-${{ parameters.branch }}
+          branch: ${{ parameters.branch }}
+          owner: ${{ user.entity.metadata.name }}
+          gitlab_host: {{ gitlab_host }}
+          gitops_namespace: openshift-gitops
+
+    - id: publish
+      name: Publish GitOps Repo
+      action: publish:gitlab
+      input:
+        repoUrl: {{ gitlab_host }}?owner=${{ user.entity.metadata.name }}&repo=parasol-insurance-secured-${{ parameters.branch }}-gitops
+        defaultBranch: main
+        repoVisibility: public
+
+    - id: publish-bootstrap
+      name: Publish Bootstrap Repo
+      action: publish:gitlab
+      input:
+        repoUrl: {{ gitlab_host }}?owner=parasol&repo=parasol-insurance-secured-${{ user.entity.metadata.name }}-${{ parameters.branch }}-bootstrap
+        sourcePath: bootstrap
+        defaultBranch: main
+        repoVisibility: public
+
+    - id: create-argocd-resources
+      name: Create ArgoCD Resources
+      action: argocd:create-resources
+      input:
+        appName: parasol-insurance-secured-dev-${{ user.entity.metadata.name }}-${{ parameters.branch }}-bootstrap
+        argoInstance: main
+        namespace: openshift-gitops
+        repoUrl: ${{ steps['publish-bootstrap'].output.remoteUrl }}.git
+        path: .
+
+    - id: register
+      name: Register Component
+      action: catalog:register
+      input:
+        repoContentsUrl: ${{ steps.publish.output.repoContentsUrl }}
+        catalogInfoPath: /catalog-info.yaml
+
+  output:
+    links:
+      - title: GitOps Repository
+        url: ${{ steps.publish.output.remoteUrl }}
+      - title: Open in catalog
+        icon: catalog
+        entityRef: ${{ steps.register.output.entityRef }}

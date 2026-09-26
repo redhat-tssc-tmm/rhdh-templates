@@ -6,3 +6,4 @@ metadata:
 spec:
   targets:
     - ./templates/parasol-dev-environment/template.yaml
+    - ./templates/secured-parasol-dev-environment/template.yaml

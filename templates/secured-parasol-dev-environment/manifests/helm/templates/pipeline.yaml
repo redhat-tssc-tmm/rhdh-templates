@@ -1,0 +1,121 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: parasol-insurance-secured-push
+  namespace: ${{ values.namespace }}
+spec:
+  params:
+    - name: git-revision
+      type: string
+  workspaces:
+    - name: source
+    - name: basic-auth
+    - name: dockerconfig
+    - name: sonar-credentials
+    - name: maven-cache
+  tasks:
+    - name: clone-source
+      taskRef:
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: git-clone
+          - name: namespace
+            value: openshift-pipelines
+      params:
+        - name: URL
+          value: "${{ values.source_repo }}"
+        - name: REVISION
+          value: $(params.git-revision)
+        - name: SSL_VERIFY
+          value: "false"
+      workspaces:
+        - name: output
+          workspace: source
+        - name: basic-auth
+          workspace: basic-auth
+    - name: maven-build
+      runAfter:
+        - clone-source
+      taskRef:
+        name: maven-build
+      workspaces:
+        - name: source
+          workspace: source
+        - name: maven-cache
+          workspace: maven-cache
+    - name: sonar-scan
+      runAfter:
+        - maven-build
+      taskRef:
+        name: sonar-scan
+      params:
+        - name: SONAR_HOST_URL
+          value: "http://sonarqube.sonarqube.svc:9000"
+        - name: SONAR_DASHBOARD_URL
+          value: "https://sonarqube-sonarqube.${{ values.cluster_subdomain }}"
+        - name: SONAR_PROJECT_KEY
+          value: parasol-insurance-secured-${{ values.namespace }}
+      workspaces:
+        - name: source
+          workspace: source
+        - name: sonar-credentials
+          workspace: sonar-credentials
+        - name: maven-cache
+          workspace: maven-cache
+    - name: build-and-push
+      runAfter:
+        - sonar-scan
+      taskRef:
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: buildah
+          - name: namespace
+            value: openshift-pipelines
+      params:
+        - name: IMAGE
+          value: "${{ values.image_host }}/${{ values.image_organization }}/${{ values.image_name }}:${{ values.image_tag }}"
+        - name: DOCKERFILE
+          value: Containerfile
+        - name: TLSVERIFY
+          value: "false"
+        - name: STORAGE_DRIVER
+          value: vfs
+      workspaces:
+        - name: source
+          workspace: source
+        - name: dockerconfig
+          workspace: dockerconfig
+    - name: roxctl-image-scan
+      runAfter:
+        - build-and-push
+      taskRef:
+        name: roxctl-image-scan
+      params:
+        - name: image
+          value: "${{ values.image_host }}/${{ values.image_organization }}/${{ values.image_name }}:${{ values.image_tag }}"
+        - name: rox_central_endpoint
+          value: "central-rhacs.apps.${{ values.cluster_subdomain }}:443"
+    - name: roxctl-image-check
+      runAfter:
+        - roxctl-image-scan
+      taskRef:
+        name: roxctl-image-check
+      params:
+        - name: image
+          value: "${{ values.image_host }}/${{ values.image_organization }}/${{ values.image_name }}:${{ values.image_tag }}"
+        - name: rox_central_endpoint
+          value: "central-rhacs.apps.${{ values.cluster_subdomain }}:443"
+    - name: rollout-restart
+      runAfter:
+        - roxctl-image-check
+      taskRef:
+        name: rollout-restart
+      params:
+        - name: DEPLOYMENT
+          value: parasol-insurance

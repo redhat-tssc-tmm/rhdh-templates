@@ -1,0 +1,64 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: roxctl-image-check
+  namespace: ${{ values.namespace }}
+spec:
+  params:
+    - name: image
+      type: string
+    - name: rox_central_endpoint
+      type: string
+      default: "central-rhacs.apps.${{ values.cluster_subdomain }}:443"
+    - name: insecure-skip-tls-verify
+      type: string
+      default: "true"
+  results:
+    - name: CHECK_RESULT
+      description: Policy check result (PASS or FAIL)
+    - name: VIOLATIONS_SUMMARY
+      description: Summary of policy violations
+  steps:
+    - name: check
+      image: registry.redhat.io/advanced-cluster-security/rhacs-roxctl-rhel8:latest
+      env:
+        - name: ROX_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: rhacs-api-token
+              key: token
+        - name: ROX_CENTRAL_ENDPOINT
+          value: $(params.rox_central_endpoint)
+        - name: ROX_INSECURE_CLIENT_SKIP_TLS_VERIFY
+          value: $(params.insecure-skip-tls-verify)
+      script: |
+        #!/usr/bin/env bash
+        set -uo pipefail
+        echo "Checking image: $(params.image)"
+
+        roxctl image check \
+          --image="$(params.image)" \
+          --output=json > /tmp/check-results.json 2>/tmp/check-stderr.txt
+        CHECK_EXIT=$?
+
+        if [ ${CHECK_EXIT} -eq 0 ]; then
+          echo -n "PASS" > $(results.CHECK_RESULT.path)
+          echo -n "All policies passed" > $(results.VIOLATIONS_SUMMARY.path)
+          echo "Policy check PASSED"
+        else
+          echo -n "FAIL" > $(results.CHECK_RESULT.path)
+
+          if [ -s /tmp/check-results.json ]; then
+            VIOLATIONS=$(jq -r '[.alerts[]? | .policy.name] | join(", ")' /tmp/check-results.json 2>/dev/null || echo "See logs for details")
+            VIOLATION_COUNT=$(jq '[.alerts[]?] | length' /tmp/check-results.json 2>/dev/null || echo "unknown")
+            SUMMARY="${VIOLATION_COUNT} violation(s): ${VIOLATIONS}"
+          else
+            SUMMARY="Check failed — see logs"
+            cat /tmp/check-stderr.txt
+          fi
+
+          SUMMARY="${SUMMARY:0:4096}"
+          echo -n "${SUMMARY}" > $(results.VIOLATIONS_SUMMARY.path)
+          echo "Policy check FAILED: ${SUMMARY}"
+          exit 1
+        fi

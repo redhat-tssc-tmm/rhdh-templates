@@ -1,0 +1,43 @@
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: parasol-insurance-secured-push-template
+  namespace: ${{ values.namespace }}
+spec:
+  params:
+    - name: git-revision
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1
+      kind: PipelineRun
+      metadata:
+        generateName: parasol-insurance-secured-push-
+        namespace: ${{ values.namespace }}
+        labels:
+          app.kubernetes.io/name: parasol-insurance-secured-${{ values.owner }}-${{ values.branch }}
+      spec:
+        pipelineRef:
+          name: parasol-insurance-secured-push
+        params:
+          - name: git-revision
+            value: $(tt.params.git-revision)
+        workspaces:
+          - name: source
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 2Gi
+          - name: basic-auth
+            secret:
+              secretName: gitlab-basic-auth
+          - name: dockerconfig
+            secret:
+              secretName: quay-push-secret
+          - name: sonar-credentials
+            secret:
+              secretName: sonarqube-credentials
+          - name: maven-cache
+            persistentVolumeClaim:
+              claimName: maven-cache

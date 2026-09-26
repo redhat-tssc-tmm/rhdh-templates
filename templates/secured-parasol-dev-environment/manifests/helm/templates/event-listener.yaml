@@ -1,0 +1,31 @@
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: parasol-insurance-secured-listener
+  namespace: ${{ values.namespace }}
+spec:
+  serviceAccountName: parasol-insurance-build
+  triggers:
+    - name: push
+      interceptors:
+        - ref:
+            name: gitlab
+            kind: ClusterInterceptor
+          params:
+            - name: secretRef
+              value:
+                secretName: gitlab-credentials
+                secretKey: token
+            - name: eventTypes
+              value:
+                - "Push Hook"
+        - ref:
+            name: cel
+            kind: ClusterInterceptor
+          params:
+            - name: filter
+              value: "body.ref == 'refs/heads/${{ values.branch }}' && body.after != '0000000000000000000000000000000000000000'"
+      bindings:
+        - ref: parasol-insurance-secured-push-binding
+      template:
+        ref: parasol-insurance-secured-push-template

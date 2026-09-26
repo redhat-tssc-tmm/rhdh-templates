@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: parasol-insurance-secured-dev-${{ values.owner }}-${{ values.branch }}
+  namespace: ${{ values.gitops_namespace }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  destination:
+    namespace: ${{ values.namespace }}
+    server: https://kubernetes.default.svc
+  project: appproject-${{ values.owner }}
+  source:
+    path: helm
+    repoURL: https://${{ values.gitlab_host }}/${{ values.owner }}/parasol-insurance-secured-${{ values.branch }}-gitops.git
+    targetRevision: main
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
