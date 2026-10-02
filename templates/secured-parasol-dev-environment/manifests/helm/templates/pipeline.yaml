@@ -100,7 +100,7 @@ spec:
         - name: image
           value: "${{ values.image_host }}/${{ values.image_organization }}/${{ values.image_name }}:${{ values.image_tag }}"
         - name: rox_central_endpoint
-          value: "central-rhacs.apps.${{ values.cluster_subdomain }}:443"
+          value: "central.rhacs.svc:443"
     - name: roxctl-image-check
       runAfter:
         - roxctl-image-scan
@@ -110,7 +110,7 @@ spec:
         - name: image
           value: "${{ values.image_host }}/${{ values.image_organization }}/${{ values.image_name }}:${{ values.image_tag }}"
         - name: rox_central_endpoint
-          value: "central-rhacs.apps.${{ values.cluster_subdomain }}:443"
+          value: "central.rhacs.svc:443"
     - name: rollout-restart
       runAfter:
         - roxctl-image-check
