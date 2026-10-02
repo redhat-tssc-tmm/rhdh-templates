@@ -29,6 +29,8 @@ spec:
               key: token
         - name: ROX_CENTRAL_ENDPOINT
           value: $(params.rox_central_endpoint)
+        - name: ROX_ENDPOINT
+          value: $(params.rox_central_endpoint)
         - name: ROX_INSECURE_CLIENT_SKIP_TLS_VERIFY
           value: $(params.insecure-skip-tls-verify)
       script: |
