@@ -24,7 +24,7 @@ spec:
       description: Number of medium vulnerabilities
   steps:
     - name: scan
-      image: registry.redhat.io/advanced-cluster-security/rhacs-roxctl-rhel8:latest
+      image: registry.redhat.io/advanced-cluster-security/rhacs-roxctl-rhel8:4.11.2
       env:
         - name: ROX_API_TOKEN
           valueFrom:
