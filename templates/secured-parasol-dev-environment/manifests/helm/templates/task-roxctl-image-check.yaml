@@ -58,6 +58,13 @@ spec:
         exit 0
     - name: report
       image: registry.access.redhat.com/ubi9-minimal:latest
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
       volumeMounts:
         - name: check-output
           mountPath: /tmp/check-output
@@ -66,6 +73,13 @@ spec:
         cat /tmp/check-output/image-check.json
     - name: enforce
       image: registry.access.redhat.com/ubi9-minimal:latest
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
       volumeMounts:
         - name: check-output
           mountPath: /tmp/check-output

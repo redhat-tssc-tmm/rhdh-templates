@@ -58,6 +58,13 @@ spec:
         echo "ACS image scan completed for $(params.IMAGE)" >&2
     - name: summary
       image: registry.access.redhat.com/ubi9:latest
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
       volumeMounts:
         - name: scan-output
           mountPath: /tmp/scan-output
@@ -90,6 +97,13 @@ spec:
         " > $(results.SCAN_OUTPUT.path)
     - name: report
       image: registry.access.redhat.com/ubi9-minimal:latest
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
       volumeMounts:
         - name: scan-output
           mountPath: /tmp/scan-output

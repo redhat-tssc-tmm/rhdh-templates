@@ -104,7 +104,7 @@ spec:
           value: "${{ values.image_host }}/${{ values.image_organization }}/${{ values.image_name }}:${{ values.image_tag }}"
     - name: roxctl-image-check
       runAfter:
-        - roxctl-image-scan
+        - build-and-push
       taskRef:
         name: roxctl-image-check
       params:
@@ -112,6 +112,7 @@ spec:
           value: "${{ values.image_host }}/${{ values.image_organization }}/${{ values.image_name }}:${{ values.image_tag }}"
     - name: rollout-restart
       runAfter:
+        - roxctl-image-scan
         - roxctl-image-check
       taskRef:
         name: rollout-restart
