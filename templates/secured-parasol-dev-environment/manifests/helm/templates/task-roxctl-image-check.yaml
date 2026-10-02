@@ -3,24 +3,28 @@ kind: Task
 metadata:
   name: roxctl-image-check
   namespace: ${{ values.namespace }}
+  annotations:
+    task.results.format: application/json
+    task.results.type: roxctl-image-check
+    task.results.key: SCAN_OUTPUT
+    task.output.location: logs
+    task.results.container: step-report
 spec:
   params:
-    - name: image
+    - name: IMAGE
       type: string
-    - name: rox_central_endpoint
+    - name: ROX_CENTRAL_ENDPOINT
       type: string
       default: "central.rhacs.svc:443"
-    - name: insecure-skip-tls-verify
+    - name: INSECURE_SKIP_TLS_VERIFY
       type: string
       default: "true"
-  results:
-    - name: CHECK_RESULT
-      description: Policy check result (PASS or FAIL)
-    - name: VIOLATIONS_SUMMARY
-      description: Summary of policy violations
+  volumes:
+    - name: check-output
+      emptyDir: {}
   steps:
     - name: check
-      image: registry.redhat.io/openshift4/ose-cli-rhel9:latest
+      image: registry.access.redhat.com/ubi9-minimal:latest
       env:
         - name: ROX_API_TOKEN
           valueFrom:
@@ -28,60 +32,47 @@ spec:
               name: rhacs-api-token
               key: token
         - name: ROX_CENTRAL_ENDPOINT
-          value: $(params.rox_central_endpoint)
-        - name: ROX_ENDPOINT
-          value: $(params.rox_central_endpoint)
-        - name: ROX_INSECURE_CLIENT_SKIP_TLS_VERIFY
-          value: $(params.insecure-skip-tls-verify)
+          value: $(params.ROX_CENTRAL_ENDPOINT)
+      volumeMounts:
+        - name: check-output
+          mountPath: /tmp/check-output
       script: |
         #!/usr/bin/env bash
         set -uo pipefail
 
-        echo "Downloading roxctl from RHACS Central..."
-        curl -sk "https://${ROX_CENTRAL_ENDPOINT}/api/cli/download/roxctl-linux-amd64" \
-          -H "Authorization: Bearer ${ROX_API_TOKEN}" \
-          -o /usr/local/bin/roxctl
-        chmod +x /usr/local/bin/roxctl
+        curl -sk -L -H "Authorization: Bearer ${ROX_API_TOKEN}" \
+          "https://${ROX_CENTRAL_ENDPOINT}/api/cli/download/roxctl-linux" \
+          --output /tmp/roxctl
+        chmod +x /tmp/roxctl
 
-        echo "Checking image: $(params.image)"
-
-        roxctl image check \
-          --image="$(params.image)" \
-          --output=json > /tmp/check-results.json 2>/tmp/check-stderr.txt
+        /tmp/roxctl image check \
+          --insecure-skip-tls-verify=$(params.INSECURE_SKIP_TLS_VERIFY) \
+          -e "${ROX_CENTRAL_ENDPOINT}" \
+          --output json \
+          --image "$(params.IMAGE)" \
+          > /tmp/check-output/image-check.json
         CHECK_EXIT=$?
 
-        python3 << 'PYEOF'
-        import json
-        try:
-            with open("/tmp/check-results.json") as f:
-                data = json.load(f)
-            results = data.get("results", [])
-            if results:
-                r = results[0]
-                policies = r.get("violatedPolicies", [])
-                breaking = [p["name"] for p in policies if p.get("failingCheck", False)]
-                total = len(policies)
-                breaking_names = "; ".join(breaking) if breaking else "none"
-                summary = f"{total} policy violations, {len(breaking)} breaking: {breaking_names}"
-                check_result = "FAIL" if breaking else "PASS"
-            else:
-                summary = "No policy violations"
-                check_result = "PASS"
-            with open("/tmp/check_result", "w") as f: f.write(check_result)
-            with open("/tmp/violations_summary", "w") as f: f.write(summary[:4096])
-        except Exception as e:
-            with open("/tmp/check_result", "w") as f: f.write("UNKNOWN")
-            with open("/tmp/violations_summary", "w") as f: f.write(f"Parse error: {e}")
-        PYEOF
-
-        cat /tmp/check_result > $(results.CHECK_RESULT.path)
-        cat /tmp/violations_summary > $(results.VIOLATIONS_SUMMARY.path)
-
-        CHECK_RESULT=$(cat /tmp/check_result)
-        VIOLATIONS_SUMMARY=$(cat /tmp/violations_summary)
-        if [ "${CHECK_RESULT}" = "FAIL" ]; then
-          echo "Policy check FAILED: ${VIOLATIONS_SUMMARY}"
+        echo "ACS image check completed for $(params.IMAGE)" >&2
+        echo -n "${CHECK_EXIT}" > /tmp/check-output/exit-code
+        exit 0
+    - name: report
+      image: registry.access.redhat.com/ubi9-minimal:latest
+      volumeMounts:
+        - name: check-output
+          mountPath: /tmp/check-output
+      script: |
+        #!/usr/bin/env bash
+        cat /tmp/check-output/image-check.json
+    - name: enforce
+      image: registry.access.redhat.com/ubi9-minimal:latest
+      volumeMounts:
+        - name: check-output
+          mountPath: /tmp/check-output
+      script: |
+        #!/usr/bin/env bash
+        CHECK_EXIT=$(cat /tmp/check-output/exit-code)
+        if [ "${CHECK_EXIT}" != "0" ]; then
+          echo "ACS image check failed with policy violations (exit code ${CHECK_EXIT})" >&2
           exit 1
-        else
-          echo "Policy check PASSED: ${VIOLATIONS_SUMMARY}"
         fi

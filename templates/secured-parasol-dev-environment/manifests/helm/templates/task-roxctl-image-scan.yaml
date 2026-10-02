@@ -3,28 +3,31 @@ kind: Task
 metadata:
   name: roxctl-image-scan
   namespace: ${{ values.namespace }}
+  annotations:
+    task.results.format: application/json
+    task.results.type: roxctl-image-scan
+    task.results.key: SCAN_OUTPUT
+    task.output.location: logs
+    task.results.container: step-report
 spec:
   params:
-    - name: image
+    - name: IMAGE
       type: string
-    - name: rox_central_endpoint
+    - name: ROX_CENTRAL_ENDPOINT
       type: string
       default: "central.rhacs.svc:443"
-    - name: insecure-skip-tls-verify
+    - name: INSECURE_SKIP_TLS_VERIFY
       type: string
       default: "true"
   results:
-    - name: SCAN_RESULTS
-      description: Summary of scan results
-    - name: CRITICAL_COUNT
-      description: Number of critical vulnerabilities
-    - name: HIGH_COUNT
-      description: Number of high vulnerabilities
-    - name: MEDIUM_COUNT
-      description: Number of medium vulnerabilities
+    - name: SCAN_OUTPUT
+      description: Vulnerability summary in the format expected by the Developer Hub Tekton plugin
+  volumes:
+    - name: scan-output
+      emptyDir: {}
   steps:
     - name: scan
-      image: registry.redhat.io/openshift4/ose-cli-rhel9:latest
+      image: registry.access.redhat.com/ubi9-minimal:latest
       env:
         - name: ROX_API_TOKEN
           valueFrom:
@@ -32,59 +35,64 @@ spec:
               name: rhacs-api-token
               key: token
         - name: ROX_CENTRAL_ENDPOINT
-          value: $(params.rox_central_endpoint)
-        - name: ROX_ENDPOINT
-          value: $(params.rox_central_endpoint)
-        - name: ROX_INSECURE_CLIENT_SKIP_TLS_VERIFY
-          value: $(params.insecure-skip-tls-verify)
+          value: $(params.ROX_CENTRAL_ENDPOINT)
+      volumeMounts:
+        - name: scan-output
+          mountPath: /tmp/scan-output
       script: |
         #!/usr/bin/env bash
-        set -uo pipefail
+        set -euo pipefail
 
-        echo "Downloading roxctl from RHACS Central..."
-        curl -sk "https://${ROX_CENTRAL_ENDPOINT}/api/cli/download/roxctl-linux-amd64" \
-          -H "Authorization: Bearer ${ROX_API_TOKEN}" \
-          -o /usr/local/bin/roxctl
-        chmod +x /usr/local/bin/roxctl
+        curl -sk -L -H "Authorization: Bearer ${ROX_API_TOKEN}" \
+          "https://${ROX_CENTRAL_ENDPOINT}/api/cli/download/roxctl-linux" \
+          --output /tmp/roxctl
+        chmod +x /tmp/roxctl
 
-        echo "Scanning image: $(params.image)"
+        /tmp/roxctl image scan \
+          --insecure-skip-tls-verify=$(params.INSECURE_SKIP_TLS_VERIFY) \
+          -e "${ROX_CENTRAL_ENDPOINT}" \
+          --output json \
+          --image "$(params.IMAGE)" \
+          > /tmp/scan-output/image-scan.json
 
-        roxctl image scan \
-          --image="$(params.image)" \
-          --output=json > /tmp/scan-results.json 2>/tmp/scan-stderr.txt || true
-
-        if [ ! -s /tmp/scan-results.json ]; then
-          echo "Scan produced no results"
-          echo -n "0" > $(results.CRITICAL_COUNT.path)
-          echo -n "0" > $(results.HIGH_COUNT.path)
-          echo -n "0" > $(results.MEDIUM_COUNT.path)
-          echo -n "Scan failed — see logs" > $(results.SCAN_RESULTS.path)
-          cat /tmp/scan-stderr.txt
-          exit 1
-        fi
-
-        python3 << 'PYEOF'
-        import json, sys
-        try:
-            with open("/tmp/scan-results.json") as f:
-                data = json.load(f)
-            summary = data.get("result", {}).get("summary", {})
-            critical = summary.get("CRITICAL", 0)
-            high = summary.get("IMPORTANT", 0)
-            medium = summary.get("MODERATE", 0)
-            with open("/tmp/critical", "w") as f: f.write(str(critical))
-            with open("/tmp/high", "w") as f: f.write(str(high))
-            with open("/tmp/medium", "w") as f: f.write(str(medium))
-            with open("/tmp/scan_summary", "w") as f: f.write(f"Critical: {critical}, High: {high}, Medium: {medium}")
-        except Exception as e:
-            for name in ["critical", "high", "medium"]:
-                with open(f"/tmp/{name}", "w") as f: f.write("0")
-            with open("/tmp/scan_summary", "w") as f: f.write(f"Parse error: {e}")
-        PYEOF
-
-        cat /tmp/critical > $(results.CRITICAL_COUNT.path)
-        cat /tmp/high > $(results.HIGH_COUNT.path)
-        cat /tmp/medium > $(results.MEDIUM_COUNT.path)
-        cat /tmp/scan_summary > $(results.SCAN_RESULTS.path)
-
-        echo "Scan complete — $(cat /tmp/scan_summary)"
+        echo "ACS image scan completed for $(params.IMAGE)" >&2
+    - name: summary
+      image: registry.access.redhat.com/ubi9:latest
+      volumeMounts:
+        - name: scan-output
+          mountPath: /tmp/scan-output
+      script: |
+        #!/usr/bin/env bash
+        python3 -c "
+        import json
+        data = json.load(open('/tmp/scan-output/image-scan.json'))
+        summary = data.get('result', {}).get('summary', {})
+        vulns = data.get('result', {}).get('vulnerabilities', [])
+        unpatched = {'critical':0,'high':0,'medium':0,'low':0}
+        for v in vulns:
+            if not v.get('componentFixedVersion',''):
+                sev = v.get('cveSeverity','')
+                if sev == 'CRITICAL': unpatched['critical'] += 1
+                elif sev == 'IMPORTANT': unpatched['high'] += 1
+                elif sev == 'MODERATE': unpatched['medium'] += 1
+                elif sev == 'LOW': unpatched['low'] += 1
+        result = {
+            'vulnerabilities': {
+                'critical': summary.get('CRITICAL', 0),
+                'high': summary.get('IMPORTANT', 0),
+                'medium': summary.get('MODERATE', 0),
+                'low': summary.get('LOW', 0),
+                'unknown': 0
+            },
+            'unpatched_vulnerabilities': unpatched
+        }
+        print(json.dumps(result))
+        " > $(results.SCAN_OUTPUT.path)
+    - name: report
+      image: registry.access.redhat.com/ubi9-minimal:latest
+      volumeMounts:
+        - name: scan-output
+          mountPath: /tmp/scan-output
+      script: |
+        #!/usr/bin/env bash
+        cat /tmp/scan-output/image-scan.json
