@@ -63,13 +63,28 @@ spec:
           exit 1
         fi
 
-        CRITICAL=$(jq '[.result.vulnerabilities[]? | select(.severity == "CRITICAL_VULNERABILITY_SEVERITY")] | length' /tmp/scan-results.json 2>/dev/null || echo "0")
-        HIGH=$(jq '[.result.vulnerabilities[]? | select(.severity == "IMPORTANT_VULNERABILITY_SEVERITY")] | length' /tmp/scan-results.json 2>/dev/null || echo "0")
-        MEDIUM=$(jq '[.result.vulnerabilities[]? | select(.severity == "MODERATE_VULNERABILITY_SEVERITY")] | length' /tmp/scan-results.json 2>/dev/null || echo "0")
+        python3 << 'PYEOF'
+        import json, sys
+        try:
+            with open("/tmp/scan-results.json") as f:
+                data = json.load(f)
+            summary = data.get("result", {}).get("summary", {})
+            critical = summary.get("CRITICAL", 0)
+            high = summary.get("IMPORTANT", 0)
+            medium = summary.get("MODERATE", 0)
+            with open("/tmp/critical", "w") as f: f.write(str(critical))
+            with open("/tmp/high", "w") as f: f.write(str(high))
+            with open("/tmp/medium", "w") as f: f.write(str(medium))
+            with open("/tmp/scan_summary", "w") as f: f.write(f"Critical: {critical}, High: {high}, Medium: {medium}")
+        except Exception as e:
+            for name in ["critical", "high", "medium"]:
+                with open(f"/tmp/{name}", "w") as f: f.write("0")
+            with open("/tmp/scan_summary", "w") as f: f.write(f"Parse error: {e}")
+        PYEOF
 
-        echo -n "${CRITICAL}" > $(results.CRITICAL_COUNT.path)
-        echo -n "${HIGH}" > $(results.HIGH_COUNT.path)
-        echo -n "${MEDIUM}" > $(results.MEDIUM_COUNT.path)
-        echo -n "Critical: ${CRITICAL}, High: ${HIGH}, Medium: ${MEDIUM}" > $(results.SCAN_RESULTS.path)
+        cat /tmp/critical > $(results.CRITICAL_COUNT.path)
+        cat /tmp/high > $(results.HIGH_COUNT.path)
+        cat /tmp/medium > $(results.MEDIUM_COUNT.path)
+        cat /tmp/scan_summary > $(results.SCAN_RESULTS.path)
 
-        echo "Scan complete — Critical: ${CRITICAL}, High: ${HIGH}, Medium: ${MEDIUM}"
+        echo "Scan complete — $(cat /tmp/scan_summary)"

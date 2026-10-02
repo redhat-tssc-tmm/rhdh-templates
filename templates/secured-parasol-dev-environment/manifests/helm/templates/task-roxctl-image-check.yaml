@@ -50,24 +50,38 @@ spec:
           --output=json > /tmp/check-results.json 2>/tmp/check-stderr.txt
         CHECK_EXIT=$?
 
-        if [ ${CHECK_EXIT} -eq 0 ]; then
-          echo -n "PASS" > $(results.CHECK_RESULT.path)
-          echo -n "All policies passed" > $(results.VIOLATIONS_SUMMARY.path)
-          echo "Policy check PASSED"
-        else
-          echo -n "FAIL" > $(results.CHECK_RESULT.path)
+        python3 << 'PYEOF'
+        import json
+        try:
+            with open("/tmp/check-results.json") as f:
+                data = json.load(f)
+            results = data.get("results", [])
+            if results:
+                r = results[0]
+                policies = r.get("violatedPolicies", [])
+                breaking = [p["name"] for p in policies if p.get("failingCheck", False)]
+                total = len(policies)
+                breaking_names = "; ".join(breaking) if breaking else "none"
+                summary = f"{total} policy violations, {len(breaking)} breaking: {breaking_names}"
+                check_result = "FAIL" if breaking else "PASS"
+            else:
+                summary = "No policy violations"
+                check_result = "PASS"
+            with open("/tmp/check_result", "w") as f: f.write(check_result)
+            with open("/tmp/violations_summary", "w") as f: f.write(summary[:4096])
+        except Exception as e:
+            with open("/tmp/check_result", "w") as f: f.write("UNKNOWN")
+            with open("/tmp/violations_summary", "w") as f: f.write(f"Parse error: {e}")
+        PYEOF
 
-          if [ -s /tmp/check-results.json ]; then
-            VIOLATIONS=$(jq -r '[.alerts[]? | .policy.name] | join(", ")' /tmp/check-results.json 2>/dev/null || echo "See logs for details")
-            VIOLATION_COUNT=$(jq '[.alerts[]?] | length' /tmp/check-results.json 2>/dev/null || echo "unknown")
-            SUMMARY="${VIOLATION_COUNT} violation(s): ${VIOLATIONS}"
-          else
-            SUMMARY="Check failed — see logs"
-            cat /tmp/check-stderr.txt
-          fi
+        cat /tmp/check_result > $(results.CHECK_RESULT.path)
+        cat /tmp/violations_summary > $(results.VIOLATIONS_SUMMARY.path)
 
-          SUMMARY="${SUMMARY:0:4096}"
-          echo -n "${SUMMARY}" > $(results.VIOLATIONS_SUMMARY.path)
-          echo "Policy check FAILED: ${SUMMARY}"
+        CHECK_RESULT=$(cat /tmp/check_result)
+        VIOLATIONS_SUMMARY=$(cat /tmp/violations_summary)
+        if [ "${CHECK_RESULT}" = "FAIL" ]; then
+          echo "Policy check FAILED: ${VIOLATIONS_SUMMARY}"
           exit 1
+        else
+          echo "Policy check PASSED: ${VIOLATIONS_SUMMARY}"
         fi
