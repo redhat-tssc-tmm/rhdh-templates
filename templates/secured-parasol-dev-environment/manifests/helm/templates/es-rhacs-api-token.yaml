@@ -15,4 +15,4 @@ spec:
     - secretKey: token
       remoteRef:
         key: secrets/rhacs/api-token
-        property: value
+        property: token
