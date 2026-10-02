@@ -9,7 +9,7 @@ spec:
       type: string
     - name: rox_central_endpoint
       type: string
-      default: "central-rhacs.apps.${{ values.cluster_subdomain }}:443"
+      default: "central-rhacs.${{ values.cluster_subdomain }}:443"
     - name: insecure-skip-tls-verify
       type: string
       default: "true"
