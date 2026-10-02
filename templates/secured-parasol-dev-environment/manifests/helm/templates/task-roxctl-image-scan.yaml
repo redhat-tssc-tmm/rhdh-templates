@@ -66,7 +66,7 @@ spec:
         fi
     - name: summary
       image: registry.access.redhat.com/ubi9:latest
-      resources:
+      computeResources:
         requests:
           cpu: 100m
           memory: 128Mi
@@ -105,7 +105,7 @@ spec:
         " > $(results.SCAN_OUTPUT.path)
     - name: report
       image: registry.access.redhat.com/ubi9-minimal:latest
-      resources:
+      computeResources:
         requests:
           cpu: 50m
           memory: 64Mi
