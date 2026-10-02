@@ -19,6 +19,9 @@ spec:
     - name: INSECURE_SKIP_TLS_VERIFY
       type: string
       default: "true"
+  workspaces:
+    - name: source
+      optional: true
   volumes:
     - name: check-output
       emptyDir: {}
@@ -55,6 +58,12 @@ spec:
 
         echo "ACS image check completed for $(params.IMAGE)" >&2
         echo -n "${CHECK_EXIT}" > /tmp/check-output/exit-code
+
+        if [ -d "$(workspaces.source.path)" ]; then
+          mkdir -p "$(workspaces.source.path)/acs-results"
+          cp /tmp/check-output/image-check.json "$(workspaces.source.path)/acs-results/image-check.json"
+        fi
+
         exit 0
     - name: report
       image: registry.access.redhat.com/ubi9-minimal:latest

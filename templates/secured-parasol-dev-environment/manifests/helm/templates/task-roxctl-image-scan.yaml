@@ -22,6 +22,9 @@ spec:
   results:
     - name: SCAN_OUTPUT
       description: Vulnerability summary in the format expected by the Developer Hub Tekton plugin
+  workspaces:
+    - name: source
+      optional: true
   volumes:
     - name: scan-output
       emptyDir: {}
@@ -56,6 +59,11 @@ spec:
           > /tmp/scan-output/image-scan.json
 
         echo "ACS image scan completed for $(params.IMAGE)" >&2
+
+        if [ -d "$(workspaces.source.path)" ]; then
+          mkdir -p "$(workspaces.source.path)/acs-results"
+          cp /tmp/scan-output/image-scan.json "$(workspaces.source.path)/acs-results/image-scan.json"
+        fi
     - name: summary
       image: registry.access.redhat.com/ubi9:latest
       resources:
