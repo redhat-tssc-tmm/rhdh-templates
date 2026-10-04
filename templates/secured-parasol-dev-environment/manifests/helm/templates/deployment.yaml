@@ -58,6 +58,8 @@ spec:
                   key: database-name
             - name: POSTGRESQL_HOST
               value: parasol-db
+            - name: QUARKUS_DATASOURCE_DB_VERSION
+              value: "12"
             - name: DEV_KAFKA_PASSWORD
               valueFrom:
                 secretKeyRef:
