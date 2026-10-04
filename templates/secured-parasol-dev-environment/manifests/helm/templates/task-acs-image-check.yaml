@@ -48,7 +48,7 @@ spec:
           --output /tmp/roxctl
         chmod +x /tmp/roxctl
 
-        /tmp/roxctl image check \
+        /tmp/roxctl image check --force \
           --insecure-skip-tls-verify=$(params.INSECURE_SKIP_TLS_VERIFY) \
           -e "${ROX_CENTRAL_ENDPOINT}" \
           --categories="Parasol Secured Build Gate" \

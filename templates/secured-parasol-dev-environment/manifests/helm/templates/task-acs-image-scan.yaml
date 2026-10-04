@@ -51,7 +51,7 @@ spec:
           --output /tmp/roxctl
         chmod +x /tmp/roxctl
 
-        /tmp/roxctl image scan \
+        /tmp/roxctl image scan --force \
           --insecure-skip-tls-verify=$(params.INSECURE_SKIP_TLS_VERIFY) \
           -e "${ROX_CENTRAL_ENDPOINT}" \
           --output json \
