@@ -9,7 +9,7 @@ spec:
       type: string
   results:
     - name: ACS_IMAGE_SCAN_OUTPUT
-      value: $(tasks.roxctl-image-scan.results.SCAN_OUTPUT)
+      value: $(tasks.acs-image-scan.results.SCAN_OUTPUT)
   workspaces:
     - name: source
     - name: basic-auth
@@ -94,26 +94,26 @@ spec:
           workspace: source
         - name: dockerconfig
           workspace: dockerconfig
-    - name: roxctl-image-scan
+    - name: acs-image-scan
       runAfter:
         - build-and-push
       taskRef:
-        name: roxctl-image-scan
+        name: acs-image-scan
       params:
         - name: IMAGE
           value: "${{ values.image_host }}/${{ values.image_organization }}/${{ values.image_name }}:${{ values.image_tag }}"
-    - name: roxctl-image-check
+    - name: acs-image-check
       runAfter:
         - build-and-push
       taskRef:
-        name: roxctl-image-check
+        name: acs-image-check
       params:
         - name: IMAGE
           value: "${{ values.image_host }}/${{ values.image_organization }}/${{ values.image_name }}:${{ values.image_tag }}"
     - name: rollout-restart
       runAfter:
-        - roxctl-image-scan
-        - roxctl-image-check
+        - acs-image-scan
+        - acs-image-check
       taskRef:
         name: rollout-restart
       params:

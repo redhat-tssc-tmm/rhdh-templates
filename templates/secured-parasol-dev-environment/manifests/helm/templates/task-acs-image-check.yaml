@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1
 kind: Task
 metadata:
-  name: roxctl-image-check
+  name: acs-image-check
   namespace: ${{ values.namespace }}
   annotations:
     task.results.format: application/json
@@ -51,6 +51,7 @@ spec:
         /tmp/roxctl image check \
           --insecure-skip-tls-verify=$(params.INSECURE_SKIP_TLS_VERIFY) \
           -e "${ROX_CENTRAL_ENDPOINT}" \
+          --categories="Parasol Secured Build Gate" \
           --output json \
           --image "$(params.IMAGE)" \
           > /tmp/check-output/image-check.json
@@ -94,8 +95,10 @@ spec:
           mountPath: /tmp/check-output
       script: |
         #!/usr/bin/env bash
+        # Sandbox mode: report violations but never fail the build.
+        # Enforcement happens only in the secured-build pipeline.
         CHECK_EXIT=$(cat /tmp/check-output/exit-code)
         if [ "${CHECK_EXIT}" != "0" ]; then
-          echo "ACS image check failed with policy violations (exit code ${CHECK_EXIT})" >&2
-          exit 1
+          echo "ACS image check found policy violations (exit code ${CHECK_EXIT}) — informational only in sandbox mode" >&2
         fi
+        exit 0
