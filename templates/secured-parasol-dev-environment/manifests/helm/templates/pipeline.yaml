@@ -10,6 +10,12 @@ spec:
   results:
     - name: ACS_IMAGE_SCAN_OUTPUT
       value: $(tasks.acs-image-scan.results.SCAN_OUTPUT)
+    - name: MAVEN_BUILD_OUTPUT
+      value: $(tasks.maven-build.results.MAVEN_BUILD_OUTPUT)
+    - name: SONAR_SCAN_OUTPUT
+      value: $(tasks.sonar-scan.results.SONAR_SCAN_OUTPUT)
+    - name: ACS_IMAGE_CHECK_OUTPUT
+      value: $(tasks.acs-image-check.results.ACS_IMAGE_CHECK_OUTPUT)
   workspaces:
     - name: source
     - name: basic-auth

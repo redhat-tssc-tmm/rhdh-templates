@@ -19,6 +19,8 @@ spec:
       description: Link to the SonarQube quality report
     - name: SONAR_QUALITY_GATE
       description: Quality gate status (PASSED or FAILED)
+    - name: SONAR_SCAN_OUTPUT
+      description: Sonar scan status for RHDH task status column
   workspaces:
     - name: source
     - name: sonar-credentials
@@ -61,8 +63,10 @@ spec:
 
         if [ ${SCAN_EXIT} -eq 0 ]; then
           echo -n "PASSED" > $(results.SONAR_QUALITY_GATE.path)
+          echo -n '{"result":"SUCCESS","note":"✅ Sonar: Quality Gate Passed"}' > $(results.SONAR_SCAN_OUTPUT.path)
         else
           echo -n "FAILED" > $(results.SONAR_QUALITY_GATE.path)
+          echo -n '{"result":"FAILURE","note":"❌ Sonar: Quality Gate Failed"}' > $(results.SONAR_SCAN_OUTPUT.path)
         fi
 
         echo ""

@@ -19,6 +19,9 @@ spec:
     - name: INSECURE_SKIP_TLS_VERIFY
       type: string
       default: "true"
+  results:
+    - name: ACS_IMAGE_CHECK_OUTPUT
+      description: ACS policy check status for RHDH task status column
   workspaces:
     - name: source
       optional: true
@@ -81,6 +84,44 @@ spec:
       script: |
         #!/usr/bin/env bash
         cat /tmp/check-output/image-check.json
+    - name: status
+      image: registry.access.redhat.com/ubi9:latest
+      computeResources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+      volumeMounts:
+        - name: check-output
+          mountPath: /tmp/check-output
+      script: |
+        #!/usr/bin/env bash
+        CHECK_EXIT=$(cat /tmp/check-output/exit-code)
+        if [ "${CHECK_EXIT}" = "0" ]; then
+          echo -n '{"result":"SUCCESS","note":"✅ Policy Check Passed"}' > $(results.ACS_IMAGE_CHECK_OUTPUT.path)
+        else
+          COUNT=$(python3 -c "
+        import json
+        try:
+            data = json.load(open('/tmp/check-output/image-check.json'))
+            results = data.get('results', [])
+            if results:
+                policies = results[0].get('violatedPolicies', [])
+                breaking = [p for p in policies if p.get('failingCheck', False)]
+                print(len(breaking))
+            else:
+                print(1)
+        except:
+            print(1)
+        " 2>/dev/null)
+          if [ "${COUNT}" = "1" ]; then
+            echo -n '{"result":"WARNING","note":"⚠️ Policy Violation"}' > $(results.ACS_IMAGE_CHECK_OUTPUT.path)
+          else
+            echo -n "{\"result\":\"WARNING\",\"note\":\"⚠️ ${COUNT} Policy Violations\"}" > $(results.ACS_IMAGE_CHECK_OUTPUT.path)
+          fi
+        fi
     - name: enforce
       image: registry.access.redhat.com/ubi9-minimal:latest
       computeResources:
