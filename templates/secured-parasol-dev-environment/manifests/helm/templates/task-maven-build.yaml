@@ -4,9 +4,6 @@ metadata:
   name: maven-build
   namespace: ${{ values.namespace }}
 spec:
-  results:
-    - name: MAVEN_BUILD_OUTPUT
-      description: Maven build status for RHDH task status column
   workspaces:
     - name: source
     - name: maven-cache
@@ -22,4 +19,3 @@ spec:
         #!/usr/bin/env bash
         set -ex
         mvn package
-        echo -n '{"result":"SUCCESS","note":"✅ Maven: BUILD SUCCESS"}' > $(results.MAVEN_BUILD_OUTPUT.path)
