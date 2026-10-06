@@ -1,0 +1,75 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: trigger-first-build
+  namespace: ${{ values.namespace }}
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      serviceAccountName: parasol-insurance-build
+      restartPolicy: Never
+      containers:
+        - name: trigger
+          image: quay.io/agnosticd/ee-multicloud:latest
+          env:
+            - name: GITLAB_HOST
+              value: "${{ values.gitlab_host }}"
+            - name: BRANCH
+              value: "${{ values.branch }}"
+            - name: OWNER
+              value: "${{ values.owner }}"
+            - name: GIT_CREDENTIALS
+              valueFrom:
+                secretKeyRef:
+                  name: gitlab-basic-auth
+                  key: .git-credentials
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+
+              GITLAB_TOKEN=$(python3 -c "
+              import os, re
+              creds = os.environ.get('GIT_CREDENTIALS', '')
+              m = re.search(r'://[^:]+:([^@]+)@', creds)
+              print(m.group(1) if m else '')
+              ")
+
+              # Wait for webhook to exist on the repo
+              echo "Waiting for webhook to be configured..."
+              for i in $(seq 1 60); do
+                COUNT=$(curl -sk -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+                  "https://${GITLAB_HOST}/api/v4/projects/${OWNER}%2Fparasol-insurance-secured/hooks" 2>/dev/null | \
+                  python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+                if [ "${COUNT}" -gt "0" ] 2>/dev/null; then
+                  echo "Webhook found."
+                  break
+                fi
+                echo "  No webhook yet, waiting 10s... (attempt ${i}/60)"
+                sleep 10
+              done
+
+              # Small delay to ensure EventListener is fully ready
+              sleep 15
+
+              # Clone and push trigger commit
+              export GIT_SSL_NO_VERIFY=true
+              REPO_URL="https://tekton:${GITLAB_TOKEN}@${GITLAB_HOST}/${OWNER}/parasol-insurance-secured.git"
+              git clone -b "${BRANCH}" "${REPO_URL}" /tmp/repo
+              cd /tmp/repo
+
+              git config user.email "tekton-bot@parasol-insurance.local"
+              git config user.name "tekton-bot"
+
+              date -u > .build-trigger
+              git add .build-trigger
+              COMMIT_MSG="Trigger first build
+
+              Automated-By: tekton-pipeline-setup
+              Skip-Signature-Verification: true"
+              git commit -m "${COMMIT_MSG}"
+              git push origin "${BRANCH}"
+
+              echo "First build triggered successfully."
