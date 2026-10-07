@@ -42,14 +42,19 @@ spec:
         #!/usr/bin/env bash
         set -uo pipefail
 
+        git config --global --add safe.directory "$(workspaces.source.path)"
+
         cd "$(workspaces.source.path)"
 
+        BIN_DIR="/tmp/bin"
+        mkdir -p "$BIN_DIR"
         echo "Downloading gitsign and cosign from TAS cli-server..."
         curl -sL http://cli-server.trusted-artifact-signer.svc:8080/clients/linux/gitsign-amd64.gz \
-          | gunzip > /usr/local/bin/gitsign
+          | gunzip > "$BIN_DIR/gitsign"
         curl -sL http://cli-server.trusted-artifact-signer.svc:8080/clients/linux/cosign-amd64.gz \
-          | gunzip > /usr/local/bin/cosign
-        chmod +x /usr/local/bin/gitsign /usr/local/bin/cosign
+          | gunzip > "$BIN_DIR/cosign"
+        chmod +x "$BIN_DIR/gitsign" "$BIN_DIR/cosign"
+        export PATH="$BIN_DIR:$PATH"
 
         echo "Initializing TUF trust root..."
         cosign initialize \
