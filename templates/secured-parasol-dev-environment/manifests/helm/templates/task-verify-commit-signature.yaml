@@ -23,7 +23,7 @@ spec:
     - name: source
   steps:
     - name: verify
-      image: registry.redhat.io/openshift4/ose-cli-rhel9:latest
+      image: registry.redhat.io/openshift-pipelines/pipelines-git-init-rhel9@sha256:6ed2659105c59b326dd0e450c144578c0cae1ee23cb40e520eabe8817013a742
       computeResources:
         requests:
           cpu: 100m
@@ -61,12 +61,9 @@ spec:
           echo -n "$status" > $(results.SIGNATURE_STATUS.path)
           echo -n "$details" > $(results.SIGNATURE_DETAILS.path)
           mkdir -p "$(workspaces.source.path)/signature-results"
-          python3 -c "
-        import json
-        data = {'status': '$status', 'details': '''$details''', 'email': '$email', 'issuer': '$issuer'}
-        with open('$(workspaces.source.path)/signature-results/status.json', 'w') as f:
-            json.dump(data, f)
-        "
+          printf '{"status":"%s","details":"%s","email":"%s","issuer":"%s"}\n' \
+            "$status" "$details" "$email" "$issuer" \
+            > "$(workspaces.source.path)/signature-results/status.json"
         }
 
         COMMITTER_EMAIL=$(git log -1 --format='%ce')
