@@ -94,8 +94,8 @@ spec:
         echo "${VERIFY_OUTPUT}"
 
         if [ "${VERIFY_EXIT}" -eq 0 ]; then
-          SIGNER_EMAIL=$(echo "$VERIFY_OUTPUT" | grep -oP '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}' | head -1 || true)
-          SIGNER_ISSUER=$(echo "$VERIFY_OUTPUT" | grep -i "issuer" | head -1 | sed 's/.*[Ii]ssuer[: ]*//' || true)
+          SIGNER_EMAIL=$(echo "$VERIFY_OUTPUT" | grep -oP '\[\K[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?=\])' | head -1 || true)
+          SIGNER_ISSUER=$(echo "$VERIFY_OUTPUT" | grep -oP 'Good signature from \[.*\]\(\K[^)]+' | head -1 || true)
           write_results "SIGNED" \
             "✅ Good signature — ${SIGNER_EMAIL:-verified signer}" \
             "${SIGNER_EMAIL:-unknown}" "${SIGNER_ISSUER:-unknown}"
