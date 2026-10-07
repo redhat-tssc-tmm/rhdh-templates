@@ -72,58 +72,41 @@ spec:
         }
 
         COMMITTER_EMAIL=$(git log -1 --format='%ce')
-        AUTOMATED_BY=$(git log -1 --format='%(trailers:key=Automated-By,valueonly)' 2>/dev/null | tr -d '[:space:]')
-        COMMIT_SHA=$(git log -1 --format='%H')
         COMMIT_DATE=$(git log -1 --format='%ci')
-        COMMIT_MSG=$(git log -1 --format='%s')
+        AUTOMATED_BY=$(git log -1 --format='%(trailers:key=Automated-By,valueonly)' 2>/dev/null | tr -d '[:space:]')
 
-        echo "Commit: ${COMMIT_SHA:0:12}"
-        echo "Author: $(git log -1 --format='%an <%ae>')"
-        echo "Committer: ${COMMITTER_EMAIL}"
-        echo "Date: ${COMMIT_DATE}"
-        echo "Message: ${COMMIT_MSG}"
+        echo "Commit by: ${COMMITTER_EMAIL} at ${COMMIT_DATE}"
 
         if [ "${COMMITTER_EMAIL}" = "${BOT_EMAIL}" ] && [ "${AUTOMATED_BY}" = "tekton-pipeline-setup" ]; then
-          echo ""
-          echo "ℹ️  Automated setup commit detected (bot committer + trailer match)"
           write_results "BOT_COMMIT" "ℹ️ Automated setup commit (unsigned, expected)" "${COMMITTER_EMAIL}" ""
           exit 0
         fi
 
-        echo ""
-        echo "Verifying commit signature..."
-        VERIFY_OUTPUT=$(git verify-commit HEAD 2>&1) || true
-        VERIFY_EXIT=$?
+        echo "Verifying commit signature with gitsign..."
+        VERIFY_OUTPUT=$(gitsign verify \
+          --certificate-identity-regexp=".*@${ALLOWED_DOMAIN}" \
+          --certificate-oidc-issuer-regexp=".*" \
+          HEAD 2>&1) && VERIFY_EXIT=0 || VERIFY_EXIT=$?
 
-        if echo "$VERIFY_OUTPUT" | grep -qi "good signature\|successfully verified"; then
-          SIGNER_EMAIL=$(echo "$VERIFY_OUTPUT" | grep -oiE '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}' | head -1)
-          ISSUER=$(echo "$VERIFY_OUTPUT" | grep -i "issuer" | head -1 | sed 's/.*issuer[: ]*//' | tr -d '[:space:]')
+        echo "gitsign verify exit code: ${VERIFY_EXIT}"
+        echo "${VERIFY_OUTPUT}"
 
-          if [ -z "$SIGNER_EMAIL" ]; then
-            SIGNER_EMAIL="(email not extracted)"
-          fi
-
-          DOMAIN="${SIGNER_EMAIL##*@}"
-          if [ "$DOMAIN" = "$ALLOWED_DOMAIN" ] || [ "$ALLOWED_DOMAIN" = "" ]; then
-            echo "✅ Good signature by ${SIGNER_EMAIL}"
-            echo "   Issuer: ${ISSUER:-unknown}"
-            echo "   Signed at: ${COMMIT_DATE}"
-            write_results "SIGNED" "✅ Good signature — ${SIGNER_EMAIL}" "${SIGNER_EMAIL}" "${ISSUER}"
-            exit 0
-          else
-            echo "⚠️  Signature valid but signer domain '${DOMAIN}' is not '${ALLOWED_DOMAIN}'"
-            write_results "SIGNED" "⚠️ Signed by ${SIGNER_EMAIL} (domain mismatch: expected ${ALLOWED_DOMAIN})" "${SIGNER_EMAIL}" "${ISSUER}"
-            exit 0
-          fi
-        else
-          echo "⚠️  WARNING! UNSIGNED COMMIT DETECTED!"
-          echo "   Commit: ${COMMIT_SHA:0:12} by ${COMMITTER_EMAIL}"
-          echo "   verify-commit output: ${VERIFY_OUTPUT}"
-          write_results "UNSIGNED" "⚠️ WARNING! UNSIGNED COMMIT DETECTED!" "${COMMITTER_EMAIL}" ""
-
-          if [ "${ENFORCE}" = "true" ]; then
-            echo "ENFORCE=true — failing the pipeline"
-            exit 1
-          fi
+        if [ "${VERIFY_EXIT}" -eq 0 ]; then
+          SIGNER_EMAIL=$(echo "$VERIFY_OUTPUT" | grep -oP '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}' | head -1 || true)
+          SIGNER_ISSUER=$(echo "$VERIFY_OUTPUT" | grep -i "issuer" | head -1 | sed 's/.*[Ii]ssuer[: ]*//' || true)
+          write_results "SIGNED" \
+            "✅ Good signature — ${SIGNER_EMAIL:-verified signer}" \
+            "${SIGNER_EMAIL:-unknown}" "${SIGNER_ISSUER:-unknown}"
           exit 0
         fi
+
+        echo "WARNING! UNSIGNED COMMIT DETECTED!"
+        echo "Committer: ${COMMITTER_EMAIL}"
+
+        write_results "UNSIGNED" "⚠️ WARNING! UNSIGNED COMMIT DETECTED!" "${COMMITTER_EMAIL}" ""
+
+        if [ "${ENFORCE}" = "true" ]; then
+          echo "ENFORCE=true — failing the pipeline"
+          exit 1
+        fi
+        exit 0
