@@ -78,6 +78,8 @@ spec:
         echo "Commit by: ${COMMITTER_EMAIL} at ${COMMIT_DATE}"
 
         if [ "${COMMITTER_EMAIL}" = "${BOT_EMAIL}" ] && [ "${AUTOMATED_BY}" = "tekton-pipeline-setup" ]; then
+          echo "Automated setup commit detected (bot committer + Automated-By trailer)"
+          echo "Signature verification skipped — bot commits are unsigned by design"
           write_results "BOT_COMMIT" "ℹ️ Automated setup commit (unsigned, expected)" "${COMMITTER_EMAIL}" ""
           exit 0
         fi
