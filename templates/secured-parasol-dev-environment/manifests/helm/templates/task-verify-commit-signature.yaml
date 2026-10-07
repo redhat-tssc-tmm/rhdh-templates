@@ -96,13 +96,14 @@ spec:
         if [ "${VERIFY_EXIT}" -eq 0 ]; then
           SIGNER_EMAIL=$(echo "$VERIFY_OUTPUT" | grep -oP '\[\K[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?=\])' | head -1 || true)
           SIGNER_ISSUER=$(echo "$VERIFY_OUTPUT" | grep -oP 'Good signature from \[.*\]\(\K[^)]+' | head -1 || true)
+          echo "✅ Good signature — ${SIGNER_EMAIL:-verified signer} (issuer: ${SIGNER_ISSUER:-unknown})"
           write_results "SIGNED" \
             "✅ Good signature — ${SIGNER_EMAIL:-verified signer}" \
             "${SIGNER_EMAIL:-unknown}" "${SIGNER_ISSUER:-unknown}"
           exit 0
         fi
 
-        echo "WARNING! UNSIGNED COMMIT DETECTED!"
+        echo "⚠️  WARNING! UNSIGNED COMMIT DETECTED!"
         echo "Committer: ${COMMITTER_EMAIL}"
 
         write_results "UNSIGNED" "⚠️ WARNING! UNSIGNED COMMIT DETECTED!" "${COMMITTER_EMAIL}" ""
