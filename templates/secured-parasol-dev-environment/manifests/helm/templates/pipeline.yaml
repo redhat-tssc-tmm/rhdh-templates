@@ -114,6 +114,9 @@ spec:
       params:
         - name: IMAGE
           value: "${{ values.image_host }}/${{ values.image_organization }}/${{ values.image_name }}:${{ values.image_tag }}"
+      workspaces:
+        - name: source
+          workspace: source
     - name: acs-image-check
       runAfter:
         - build-and-push
@@ -122,6 +125,9 @@ spec:
       params:
         - name: IMAGE
           value: "${{ values.image_host }}/${{ values.image_organization }}/${{ values.image_name }}:${{ values.image_tag }}"
+      workspaces:
+        - name: source
+          workspace: source
     - name: rollout-restart
       runAfter:
         - acs-image-scan

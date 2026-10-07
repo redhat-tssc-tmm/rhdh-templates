@@ -79,10 +79,9 @@ spec:
                     lines.append("")
                     lines.append(details)
                 elif status == "UNSIGNED":
-                    lines.append("### Commit Signature")
+                    lines.append("### ⛔ Commit Signature")
                     lines.append("")
-                    lines.append("WARNING! UNSIGNED COMMIT DETECTED!")
-                    lines.append("Without a signature, this code will not be promoted to a higher stage")
+                    lines.append("**⛔ UNSIGNED COMMIT — as per company policy, unsigned code will not be promoted beyond developer sandboxes**")
                 lines.append("")
             except Exception:
                 lines.append("### Commit Signature")
