@@ -1,0 +1,186 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: report-to-commit
+  namespace: ${{ values.namespace }}
+spec:
+  params:
+    - name: gitlab_host
+      type: string
+      default: "${{ values.gitlab_host }}"
+    - name: project_id
+      type: string
+    - name: commit_sha
+      type: string
+  workspaces:
+    - name: source
+  volumes:
+    - name: gitlab-token
+      secret:
+        secretName: gitlab-credentials
+  steps:
+    - name: prepare-and-post
+      image: registry.access.redhat.com/ubi9:latest
+      computeResources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+      env:
+        - name: GITLAB_HOST
+          value: $(params.gitlab_host)
+        - name: PROJECT_ID
+          value: $(params.project_id)
+        - name: COMMIT_SHA
+          value: $(params.commit_sha)
+        - name: WORKSPACE_PATH
+          value: $(workspaces.source.path)
+      volumeMounts:
+        - name: gitlab-token
+          mountPath: /secrets/gitlab-token
+      script: |
+        #!/usr/bin/env bash
+        set -uo pipefail
+
+        GITLAB_TOKEN=$(cat /secrets/gitlab-token/token)
+
+        python3 << 'PYEOF'
+        import json, os, subprocess
+
+        ws = os.environ.get("WORKSPACE_PATH", "")
+        gitlab_host = os.environ.get("GITLAB_HOST", "")
+        project_id = os.environ.get("PROJECT_ID", "")
+        commit_sha = os.environ.get("COMMIT_SHA", "")
+
+        lines = ["## Sandbox Build Results", ""]
+
+        # --- Signature section ---
+        sig_path = os.path.join(ws, "signature-results", "status.json")
+        if os.path.isfile(sig_path):
+            try:
+                with open(sig_path) as f:
+                    sig = json.load(f)
+                status = sig.get("status", "")
+                details = sig.get("details", "")
+                email = sig.get("email", "")
+                issuer = sig.get("issuer", "")
+
+                if status == "SIGNED":
+                    lines.append("### Commit Signature")
+                    lines.append("")
+                    sig_line = details
+                    if issuer:
+                        sig_line += f" (issued by {issuer})"
+                    lines.append(sig_line)
+                elif status == "BOT_COMMIT":
+                    lines.append("### Commit Signature")
+                    lines.append("")
+                    lines.append(details)
+                elif status == "UNSIGNED":
+                    lines.append("### Commit Signature")
+                    lines.append("")
+                    lines.append("WARNING! UNSIGNED COMMIT DETECTED!")
+                    lines.append("Without a signature, this code will not be promoted to a higher stage")
+                lines.append("")
+        else:
+            lines.append("### Commit Signature")
+            lines.append("")
+            lines.append("Signature verification not available")
+            lines.append("")
+
+        # --- ACS Policy Check section ---
+        check_path = os.path.join(ws, "acs-results", "image-check.json")
+        if os.path.isfile(check_path):
+            try:
+                with open(check_path) as f:
+                    check_data = json.load(f)
+                results = check_data.get("results", [])
+                if results:
+                    policies = results[0].get("violatedPolicies", [])
+                    breaking = [p for p in policies if p.get("failingCheck", False)]
+                    check_icon = "Warning" if breaking else "Pass"
+                    lines.append(f"### ACS Policy Check ({check_icon})")
+                    lines.append("")
+                    lines.append(f"ACS policies evaluated, {len(breaking)} with violations")
+                    lines.append("")
+                    if policies:
+                        lines.append("<details>")
+                        lines.append(f"<summary>Policy Details ({len(policies)} policies)</summary>")
+                        lines.append("")
+                        lines.append("Policy | Severity | Status")
+                        lines.append("-------|----------|-------")
+                        for p in policies:
+                            name = p.get("name", "Unknown")
+                            severity = p.get("severity", "Unknown")
+                            pstatus = "Violation" if p.get("failingCheck", False) else "Warning"
+                            lines.append(f"{name} | {severity} | {pstatus}")
+                        lines.append("")
+                        lines.append("</details>")
+            except Exception:
+                pass
+
+        # --- ACS Image Scan section ---
+        scan_path = os.path.join(ws, "acs-results", "image-scan.json")
+        if os.path.isfile(scan_path):
+            try:
+                with open(scan_path) as f:
+                    scan_data = json.load(f)
+                summary = scan_data.get("result", {}).get("summary", {})
+                vulns = scan_data.get("result", {}).get("vulnerabilities", [])
+                sev_label = {"CRITICAL": "Critical", "IMPORTANT": "Important",
+                             "MODERATE": "Moderate", "LOW": "Low"}
+
+                counts = {}
+                for sev_key in ["CRITICAL", "IMPORTANT", "MODERATE", "LOW"]:
+                    total = summary.get(sev_key, 0)
+                    fixable = sum(1 for v in vulns if v.get("cveSeverity") == sev_key and v.get("componentFixedVersion", ""))
+                    unfixable = sum(1 for v in vulns if v.get("cveSeverity") == sev_key and not v.get("componentFixedVersion", ""))
+                    counts[sev_key] = {"total": total, "fixable": fixable, "unfixable": unfixable}
+
+                lines.append("")
+                lines.append("### ACS Image Scan")
+                lines.append("")
+                lines.append("Severity | Total | With available fixes | Without fixes")
+                lines.append("---------|-------|---------------------|---------------")
+                for sev_key in ["CRITICAL", "IMPORTANT", "MODERATE", "LOW"]:
+                    c = counts.get(sev_key, {})
+                    lines.append(f"{sev_label[sev_key]} | {c.get('total', 0)} | {c.get('fixable', 0)} | {c.get('unfixable', 0)}")
+
+                sorted_vulns = sorted(vulns,
+                    key=lambda x: ({"CRITICAL": 0, "IMPORTANT": 1, "MODERATE": 2, "LOW": 3}.get(x.get("cveSeverity", ""), 99),
+                                   x.get("cveId", "")))
+                if sorted_vulns:
+                    lines.append("")
+                    lines.append("<details>")
+                    lines.append(f"<summary>CVE Details ({len(sorted_vulns)} vulnerabilities)</summary>")
+                    lines.append("")
+                    lines.append("CVE ID | Severity | Component | Version | Fixed in")
+                    lines.append("-------|----------|-----------|---------|----------")
+                    for v in sorted_vulns:
+                        cve = v.get("cveId", "N/A")
+                        sev = sev_label.get(v.get("cveSeverity", ""), "Unknown")
+                        comp = v.get("componentName", "N/A")
+                        ver = v.get("componentVersion", "N/A")
+                        fix = v.get("componentFixedVersion", "") or "No fix available"
+                        lines.append(f"{cve} | {sev} | {comp} | {ver} | {fix}")
+                    lines.append("")
+                    lines.append("</details>")
+            except Exception:
+                pass
+
+        note_body = "\n".join(lines)
+
+        # Post commit comment
+        api_url = f"https://{gitlab_host}/api/v4/projects/{project_id}/repository/commits/{commit_sha}/comments"
+        result = subprocess.run([
+            "curl", "-sk", "-w", "\n%{http_code}",
+            "--header", f"PRIVATE-TOKEN: {open('/secrets/gitlab-token/token').read().strip()}",
+            "--data-urlencode", f"note={note_body}",
+            api_url
+        ], capture_output=True, text=True)
+
+        http_code = result.stdout.strip().split("\n")[-1] if result.stdout else "error"
+        print(f"Posted commit comment (HTTP {http_code})")
+        PYEOF

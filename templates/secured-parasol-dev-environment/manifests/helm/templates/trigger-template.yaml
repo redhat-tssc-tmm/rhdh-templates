@@ -6,6 +6,8 @@ metadata:
 spec:
   params:
     - name: git-revision
+    - name: project-id
+    - name: commit-sha
   resourcetemplates:
     - apiVersion: tekton.dev/v1
       kind: PipelineRun
@@ -20,6 +22,10 @@ spec:
         params:
           - name: git-revision
             value: $(tt.params.git-revision)
+          - name: project-id
+            value: $(tt.params.project-id)
+          - name: commit-sha
+            value: $(tt.params.commit-sha)
         workspaces:
           - name: source
             volumeClaimTemplate:

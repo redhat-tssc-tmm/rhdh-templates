@@ -7,3 +7,7 @@ spec:
   params:
     - name: git-revision
       value: $(body.checkout_sha)
+    - name: project-id
+      value: $(body.project_id)
+    - name: commit-sha
+      value: $(body.checkout_sha)

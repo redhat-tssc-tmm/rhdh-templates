@@ -1,0 +1,127 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: verify-commit-signature
+  namespace: ${{ values.namespace }}
+spec:
+  params:
+    - name: ALLOWED_DOMAIN
+      type: string
+      default: "demo.redhat.com"
+    - name: BOT_EMAIL
+      type: string
+      default: "tekton-bot@parasol-insurance.local"
+    - name: ENFORCE
+      type: string
+      default: "false"
+  results:
+    - name: SIGNATURE_STATUS
+      description: "SIGNED, UNSIGNED, or BOT_COMMIT"
+    - name: SIGNATURE_DETAILS
+      description: Human-readable signature summary
+  workspaces:
+    - name: source
+  steps:
+    - name: verify
+      image: registry.redhat.io/openshift4/ose-cli-rhel9:latest
+      computeResources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+      env:
+        - name: ALLOWED_DOMAIN
+          value: $(params.ALLOWED_DOMAIN)
+        - name: BOT_EMAIL
+          value: $(params.BOT_EMAIL)
+        - name: ENFORCE
+          value: $(params.ENFORCE)
+      script: |
+        #!/usr/bin/env bash
+        set -uo pipefail
+
+        cd "$(workspaces.source.path)"
+
+        echo "Downloading gitsign and cosign from TAS cli-server..."
+        curl -sL http://cli-server.trusted-artifact-signer.svc:8080/clients/linux/gitsign-amd64.gz \
+          | gunzip > /usr/local/bin/gitsign
+        curl -sL http://cli-server.trusted-artifact-signer.svc:8080/clients/linux/cosign-amd64.gz \
+          | gunzip > /usr/local/bin/cosign
+        chmod +x /usr/local/bin/gitsign /usr/local/bin/cosign
+
+        echo "Initializing TUF trust root..."
+        cosign initialize \
+          --mirror="http://tuf.trusted-artifact-signer.svc" \
+          --root="http://tuf.trusted-artifact-signer.svc/root.json" 2>/dev/null
+
+        write_results() {
+          local status="$1" details="$2" email="${3:-}" issuer="${4:-}"
+          echo -n "$status" > $(results.SIGNATURE_STATUS.path)
+          echo -n "$details" > $(results.SIGNATURE_DETAILS.path)
+          mkdir -p "$(workspaces.source.path)/signature-results"
+          python3 -c "
+        import json
+        data = {'status': '$status', 'details': '''$details''', 'email': '$email', 'issuer': '$issuer'}
+        with open('$(workspaces.source.path)/signature-results/status.json', 'w') as f:
+            json.dump(data, f)
+        "
+        }
+
+        COMMITTER_EMAIL=$(git log -1 --format='%ce')
+        AUTOMATED_BY=$(git log -1 --format='%(trailers:key=Automated-By,valueonly)' 2>/dev/null | tr -d '[:space:]')
+        COMMIT_SHA=$(git log -1 --format='%H')
+        COMMIT_DATE=$(git log -1 --format='%ci')
+        COMMIT_MSG=$(git log -1 --format='%s')
+
+        echo "Commit: ${COMMIT_SHA:0:12}"
+        echo "Author: $(git log -1 --format='%an <%ae>')"
+        echo "Committer: ${COMMITTER_EMAIL}"
+        echo "Date: ${COMMIT_DATE}"
+        echo "Message: ${COMMIT_MSG}"
+
+        if [ "${COMMITTER_EMAIL}" = "${BOT_EMAIL}" ] && [ "${AUTOMATED_BY}" = "tekton-pipeline-setup" ]; then
+          echo ""
+          echo "ℹ️  Automated setup commit detected (bot committer + trailer match)"
+          write_results "BOT_COMMIT" "ℹ️ Automated setup commit (unsigned, expected)" "${COMMITTER_EMAIL}" ""
+          exit 0
+        fi
+
+        echo ""
+        echo "Verifying commit signature..."
+        VERIFY_OUTPUT=$(git verify-commit HEAD 2>&1) || true
+        VERIFY_EXIT=$?
+
+        if echo "$VERIFY_OUTPUT" | grep -qi "good signature\|successfully verified"; then
+          SIGNER_EMAIL=$(echo "$VERIFY_OUTPUT" | grep -oiE '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}' | head -1)
+          ISSUER=$(echo "$VERIFY_OUTPUT" | grep -i "issuer" | head -1 | sed 's/.*issuer[: ]*//' | tr -d '[:space:]')
+
+          if [ -z "$SIGNER_EMAIL" ]; then
+            SIGNER_EMAIL="(email not extracted)"
+          fi
+
+          DOMAIN="${SIGNER_EMAIL##*@}"
+          if [ "$DOMAIN" = "$ALLOWED_DOMAIN" ] || [ "$ALLOWED_DOMAIN" = "" ]; then
+            echo "✅ Good signature by ${SIGNER_EMAIL}"
+            echo "   Issuer: ${ISSUER:-unknown}"
+            echo "   Signed at: ${COMMIT_DATE}"
+            write_results "SIGNED" "✅ Good signature — ${SIGNER_EMAIL}" "${SIGNER_EMAIL}" "${ISSUER}"
+            exit 0
+          else
+            echo "⚠️  Signature valid but signer domain '${DOMAIN}' is not '${ALLOWED_DOMAIN}'"
+            write_results "SIGNED" "⚠️ Signed by ${SIGNER_EMAIL} (domain mismatch: expected ${ALLOWED_DOMAIN})" "${SIGNER_EMAIL}" "${ISSUER}"
+            exit 0
+          fi
+        else
+          echo "⚠️  WARNING! UNSIGNED COMMIT DETECTED!"
+          echo "   Commit: ${COMMIT_SHA:0:12} by ${COMMITTER_EMAIL}"
+          echo "   verify-commit output: ${VERIFY_OUTPUT}"
+          write_results "UNSIGNED" "⚠️ WARNING! UNSIGNED COMMIT DETECTED!" "${COMMITTER_EMAIL}" ""
+
+          if [ "${ENFORCE}" = "true" ]; then
+            echo "ENFORCE=true — failing the pipeline"
+            exit 1
+          fi
+          exit 0
+        fi

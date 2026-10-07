@@ -7,6 +7,10 @@ spec:
   params:
     - name: git-revision
       type: string
+    - name: project-id
+      type: string
+    - name: commit-sha
+      type: string
   results:
     - name: ACS_IMAGE_SCAN_OUTPUT
       value: $(tasks.acs-image-scan.results.SCAN_OUTPUT)
@@ -39,9 +43,17 @@ spec:
           workspace: source
         - name: basic-auth
           workspace: basic-auth
-    - name: maven-build
+    - name: verify-commit-signature
       runAfter:
         - clone-source
+      taskRef:
+        name: verify-commit-signature
+      workspaces:
+        - name: source
+          workspace: source
+    - name: maven-build
+      runAfter:
+        - verify-commit-signature
       taskRef:
         name: maven-build
       workspaces:
@@ -119,3 +131,15 @@ spec:
       params:
         - name: DEPLOYMENT
           value: parasol-insurance
+  finally:
+    - name: report-to-commit
+      taskRef:
+        name: report-to-commit
+      workspaces:
+        - name: source
+          workspace: source
+      params:
+        - name: project_id
+          value: $(params.project-id)
+        - name: commit_sha
+          value: $(params.commit-sha)
