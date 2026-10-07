@@ -14,5 +14,5 @@ spec:
   data:
     - secretKey: token
       remoteRef:
-        key: secrets/common/webhook-secret
+        key: secrets/gitlab/token
         property: value
