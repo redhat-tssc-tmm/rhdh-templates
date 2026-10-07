@@ -84,6 +84,11 @@ spec:
                     lines.append("WARNING! UNSIGNED COMMIT DETECTED!")
                     lines.append("Without a signature, this code will not be promoted to a higher stage")
                 lines.append("")
+            except Exception:
+                lines.append("### Commit Signature")
+                lines.append("")
+                lines.append("Signature data could not be read")
+                lines.append("")
         else:
             lines.append("### Commit Signature")
             lines.append("")
