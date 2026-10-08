@@ -68,14 +68,14 @@ spec:
                 issuer = sig.get("issuer", "")
 
                 if status == "SIGNED":
-                    lines.append("### Commit Signature")
+                    lines.append("### ✅ Commit Signature")
                     lines.append("")
                     sig_line = details
                     if issuer:
                         sig_line += f" (issued by {issuer})"
                     lines.append(sig_line)
                 elif status == "BOT_COMMIT":
-                    lines.append("### Commit Signature")
+                    lines.append("### ℹ️ Commit Signature")
                     lines.append("")
                     lines.append(details)
                 elif status == "UNSIGNED":
@@ -104,8 +104,8 @@ spec:
                 if results:
                     policies = results[0].get("violatedPolicies", [])
                     breaking = [p for p in policies if p.get("failingCheck", False)]
-                    check_icon = "Warning" if breaking else "Pass"
-                    lines.append(f"### ACS Policy Check ({check_icon})")
+                    check_icon = "❌" if breaking else "✅"
+                    lines.append(f"### {check_icon} ACS Policy Check")
                     lines.append("")
                     lines.append(f"ACS policies evaluated, {len(breaking)} with violations")
                     lines.append("")
@@ -118,7 +118,7 @@ spec:
                         for p in policies:
                             name = p.get("name", "Unknown")
                             severity = p.get("severity", "Unknown")
-                            pstatus = "Violation" if p.get("failingCheck", False) else "Warning"
+                            pstatus = "❌ Violation" if p.get("failingCheck", False) else "⚠️ Warning"
                             lines.append(f"{name} | {severity} | {pstatus}")
                         lines.append("")
                         lines.append("</details>")
@@ -144,7 +144,7 @@ spec:
                     counts[sev_key] = {"total": total, "fixable": fixable, "unfixable": unfixable}
 
                 lines.append("")
-                lines.append("### ACS Image Scan")
+                lines.append("### 🔍 ACS Image Scan")
                 lines.append("")
                 lines.append("Severity | Total | With available fixes | Without fixes")
                 lines.append("---------|-------|---------------------|---------------")
