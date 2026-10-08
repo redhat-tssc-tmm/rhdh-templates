@@ -54,7 +54,7 @@ spec:
         project_id = os.environ.get("PROJECT_ID", "")
         commit_sha = os.environ.get("COMMIT_SHA", "")
 
-        lines = ["## Sandbox Build Results", ""]
+        lines = ["## 🧪 Sandbox Build Results", ""]
 
         # --- Signature section ---
         sig_path = os.path.join(ws, "signature-results", "status.json")
